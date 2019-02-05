@@ -268,7 +268,11 @@ Setting ``vet = True`` is equivalent to adding the ``atomic``, ``bools``,
 ``nogo`` rule.
 
 See the full list of available nogo checks:
-``bazel query 'kind(go_tool_library, @org_golang_x_tools//go/analysis/passes/...)'``
+
+.. code:: shell
+
+    bazel query 'kind(go_tool_library, @org_golang_x_tools//go/analysis/passes/...)'
+
 
 API
 ---
