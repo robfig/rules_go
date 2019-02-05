@@ -262,7 +262,7 @@ default).
         visibility = ["//visibility:public"],
     )
 
-Setting ``vet = True`` is equivalent to adding the ``atomic``, ``bool``,
+Setting ``vet = True`` is equivalent to adding the ``atomic``, ``bools``,
 ``buildtag``, ``nilfunc``, and ``printf`` analyzers from
 ``@org_golang_x_tools//go/analysis/passes`` to the ``deps`` list of your
 ``nogo`` rule.
