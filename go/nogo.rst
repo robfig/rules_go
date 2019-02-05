@@ -263,9 +263,12 @@ default).
     )
 
 Setting ``vet = True`` is equivalent to adding the ``atomic``, ``bool``,
-``buildtags``, ``nilfunc``, and ``printf`` analyzers from
+``buildtag``, ``nilfunc``, and ``printf`` analyzers from
 ``@org_golang_x_tools//go/analysis/passes`` to the ``deps`` list of your
 ``nogo`` rule.
+
+See the full list of available nogo checks:
+``bazel query 'kind(go_tool_library, @org_golang_x_tools//go/analysis/passes/...)'``
 
 API
 ---
