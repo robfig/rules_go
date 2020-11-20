@@ -60,6 +60,8 @@ type env struct {
 	workDirPath string
 
 	shouldPreserveWorkDir bool
+
+	pwd string
 }
 
 // envFlags registers flags common to multiple builders and returns an env
@@ -71,6 +73,7 @@ func envFlags(flags *flag.FlagSet) *env {
 	flags.StringVar(&env.installSuffix, "installsuffix", "", "Standard library under GOROOT/pkg")
 	flags.BoolVar(&env.verbose, "v", false, "Whether subprocess command lines should be printed")
 	flags.BoolVar(&env.shouldPreserveWorkDir, "work", false, "if true, the temporary work directory will be preserved")
+	env.pwd, _ = os.Getwd()
 	return env
 }
 
@@ -133,8 +136,9 @@ func (e *env) runCommand(args []string) error {
 	cmd := exec.Command(args[0], args[1:]...)
 	// Redirecting stdout to stderr. This mirrors behavior in the go command:
 	// https://go.googlesource.com/go/+/refs/tags/go1.15.2/src/cmd/go/internal/work/exec.go#1958
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
+	wr := absToRelativePathWriter{pwd: e.pwd, delegate: os.Stderr}
+	cmd.Stdout = wr
+	cmd.Stderr = wr
 	return runAndLogCommand(cmd, e.verbose)
 }
 
@@ -331,6 +335,39 @@ func absArgs(args []string, flags []string) {
 			break
 		}
 	}
+}
+
+// absToRelativePathWriter filters the output stream from a compile command,
+// replacing any absolute paths with relative equivalents.
+//
+// This is done on a best-effort basis, and not much effort is undertaken. If a
+// path is split across multiple Write calls, it will not be relativized.
+type absToRelativePathWriter struct {
+	pwd      string
+	delegate io.Writer
+}
+
+func (wr absToRelativePathWriter) Write(p []byte) (nn int, err error) {
+	if wr.pwd == "" {
+		return wr.delegate.Write(p)
+	}
+	if !strings.HasSuffix(wr.pwd, "/") {
+		wr.pwd += "/"
+	}
+	return wr.delegate.Write(bytes.ReplaceAll(p, []byte(wr.pwd), nil))
+}
+
+// rel converts absolute paths found in the given output string to relative, if
+// they are within the PWD.
+func rel(output string) string {
+	dir, err := os.Getwd()
+	if dir == "" || err != nil {
+		return output
+	}
+	if !strings.HasSuffix(dir, "/")  {
+		dir += "/"
+	}
+	return strings.ReplaceAll(output, dir, "")
 }
 
 // formatCommand writes cmd to w in a format where it can be pasted into a
