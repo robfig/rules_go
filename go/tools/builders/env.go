@@ -60,6 +60,8 @@ type env struct {
 	workDirPath string
 
 	shouldPreserveWorkDir bool
+
+	execDir string
 }
 
 // envFlags registers flags common to multiple builders and returns an env
@@ -71,6 +73,7 @@ func envFlags(flags *flag.FlagSet) *env {
 	flags.StringVar(&env.installSuffix, "installsuffix", "", "Standard library under GOROOT/pkg")
 	flags.BoolVar(&env.verbose, "v", false, "Whether subprocess command lines should be printed")
 	flags.BoolVar(&env.shouldPreserveWorkDir, "work", false, "if true, the temporary work directory will be preserved")
+	env.execDir, _ = os.Getwd()
 	return env
 }
 
@@ -133,18 +136,20 @@ func (e *env) runCommand(args []string) error {
 	cmd := exec.Command(args[0], args[1:]...)
 	// Redirecting stdout to stderr. This mirrors behavior in the go command:
 	// https://go.googlesource.com/go/+/refs/tags/go1.15.2/src/cmd/go/internal/work/exec.go#1958
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
-	return runAndLogCommand(cmd, e.verbose)
+	var stderr bytes.Buffer
+	cmd.Stdout = &stderr
+	cmd.Stderr = &stderr
+	return runAndLogCommand(cmd, &stderr, e.verbose)
 }
 
 // runCommandToFile executes a subprocess and writes the output to the given
 // writer.
 func (e *env) runCommandToFile(w io.Writer, args []string) error {
 	cmd := exec.Command(args[0], args[1:]...)
+	var stderr bytes.Buffer
 	cmd.Stdout = w
-	cmd.Stderr = os.Stderr
-	return runAndLogCommand(cmd, e.verbose)
+	cmd.Stderr = &stderr
+	return runAndLogCommand(cmd, &stderr, e.verbose)
 }
 
 func absEnv(envNameList []string, argList []string) error {
@@ -158,13 +163,15 @@ func absEnv(envNameList []string, argList []string) error {
 	return nil
 }
 
-func runAndLogCommand(cmd *exec.Cmd, verbose bool) error {
+func runAndLogCommand(cmd *exec.Cmd, stderr *bytes.Buffer, verbose bool) error {
 	if verbose {
 		fmt.Fprintln(os.Stderr, formatCommand(cmd))
 	}
 	cleanup := passLongArgsInResponseFiles(cmd)
 	defer cleanup()
-	if err := cmd.Run(); err != nil {
+	err := cmd.Run()
+	os.Stderr.Write(relativizePaths(stderr.Bytes()))
+	if err != nil {
 		return fmt.Errorf("error running subcommand %s: %v", cmd.Path, err)
 	}
 	return nil
@@ -330,6 +337,21 @@ func absArgs(args []string, flags []string) {
 			break
 		}
 	}
+}
+
+// relativizePaths converts absolute paths found in the given output string to
+// relative, if they are within the PWD.
+func relativizePaths(output []byte) []byte {
+	dir, err := os.Getwd()
+	if dir == "" || err != nil {
+		return output
+	}
+	dirBytes := make([]byte, len(dir), len(dir)+1)
+	copy(dirBytes, dir)
+	if !bytes.HasSuffix(dirBytes, []byte{filepath.Separator})  {
+		dirBytes = append(dirBytes, filepath.Separator)
+	}
+	return bytes.ReplaceAll(output, dirBytes, nil)
 }
 
 // formatCommand formats cmd as a string that can be pasted into a shell.
