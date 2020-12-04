@@ -133,14 +133,21 @@ func (e *env) runCommand(args []string) error {
 	cmd := exec.Command(args[0], args[1:]...)
 	// Redirecting stdout to stderr. This mirrors behavior in the go command:
 	// https://go.googlesource.com/go/+/refs/tags/go1.15.2/src/cmd/go/internal/work/exec.go#1958
-	return runAndLogCommandOutput(cmd, os.Stderr, os.Stderr, e.verbose)
+	buf := &bytes.Buffer{}
+	cmd.Stdout = buf
+	cmd.Stderr = buf
+	err := runAndLogCommand(cmd, e.verbose)
+	fmt.Fprint(os.Stderr, relativizePaths(buf.Bytes()))
+	return err
 }
 
 // runCommandToFile executes a subprocess and writes the output to the given
 // writer.
 func (e *env) runCommandToFile(w io.Writer, args []string) error {
 	cmd := exec.Command(args[0], args[1:]...)
-	return runAndLogCommandOutput(cmd, w, os.Stderr, e.verbose)
+	cmd.Stdout = w
+	cmd.Stderr = os.Stderr
+	return runAndLogCommand(cmd, e.verbose)
 }
 
 func absEnv(envNameList []string, argList []string) error {
@@ -152,16 +159,6 @@ func absEnv(envNameList []string, argList []string) error {
 		}
 	}
 	return nil
-}
-
-func runAndLogCommandOutput(cmd *exec.Cmd, stdout, stderr io.Writer, verbose bool) error {
-	var bufout, buferr bytes.Buffer
-	cmd.Stdout = &bufout
-	cmd.Stderr = &buferr
-	err := runAndLogCommand(cmd, verbose)
-	io.Copy(stdout, bytes.NewReader(relativizePaths(bufout.Bytes())))
-	io.Copy(stderr, bytes.NewReader(relativizePaths(buferr.Bytes())))
-	return err
 }
 
 func runAndLogCommand(cmd *exec.Cmd, verbose bool) error {
@@ -347,7 +344,7 @@ func relativizePaths(output []byte) []byte {
 	}
 	dirBytes := make([]byte, len(dir), len(dir)+1)
 	copy(dirBytes, dir)
-	if bytes.HasSuffix(dirBytes, []byte{filepath.Separator})  {
+	if bytes.HasSuffix(dirBytes, []byte{filepath.Separator}) {
 		return bytes.ReplaceAll(output, dirBytes, nil)
 	}
 
